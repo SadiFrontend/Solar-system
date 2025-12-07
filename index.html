@@ -3,12 +3,445 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solar System Simulation</title>
-<link rel="stylesheet" href="style.css">
+<title>Solar System Simulation - Optimized</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: black;
+    font-family: Arial, sans-serif;
+    color: white;
+}
+
+canvas {
+    display: block;
+}
+
+#clock {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 18px;
+    background: rgba(0,0,0,0.5);
+    padding: 6px 12px;
+    border-radius: 6px;
+    user-select: none;
+}
+
+#controls {
+    position: absolute;
+    top: 50px;
+    left: 10px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+#controls button {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid white;
+    padding: 5px 10px;
+    margin: 2px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+#controls button:hover {
+    background: rgba(255,255,255,0.4);
+}
+
+#info {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.7);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    max-width: 250px;
+}
+
+#fps {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.7);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+</style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 <div id="clock"></div>
-<script src="script.js"></script>
+<div id="controls">
+    <div><strong>Controls:</strong></div>
+    <button onclick="adjustSpeed(0.5)">0.5x</button>
+    <button onclick="adjustSpeed(1)">1x</button>
+    <button onclick="adjustSpeed(2)">2x</button>
+    <button onclick="adjustSpeed(5)">5x</button>
+    <button onclick="adjustSpeed(10)">10x</button>
+    <div style="margin-top:5px">
+        <button onclick="adjustZoom(-0.2)">Zoom -</button>
+        <button onclick="resetView()">Reset</button>
+        <button onclick="adjustZoom(0.2)">Zoom +</button>
+    </div>
+    <div style="margin-top:5px">
+        <button onclick="toggleTrails()">Toggle Trails</button>
+        <button onclick="toggleLabels()">Toggle Labels</button>
+    </div>
+    <div style="margin-top:5px">
+        <button onclick="togglePause()">⏯ Pause/Resume</button>
+    </div>
+</div>
+<div id="fps">FPS: 60</div>
+<div id="info">
+    Click and drag to pan<br>
+    Mouse wheel to zoom<br>
+    Click planet for info
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let centerX = canvas.width/2;
+let centerY = canvas.height/2;
+
+// Performance optimizations
+let showTrails = true;
+let showLabels = true;
+let isPaused = false;
+let speedMultiplier = 1;
+
+// Zoom and pan
+let zoom = 1;
+let offsetX = 0;
+let offsetY = 0;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+
+// FPS counter
+let fps = 60;
+let frameCount = 0;
+let lastFpsUpdate = Date.now();
+
+// Stars - optimized with pre-calculated positions
+const stars = [];
+for(let i=0;i<300;i++){
+    stars.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        radius: Math.random()*1.5,
+        alpha: Math.random(),
+        alphaChange: (Math.random()-0.5)*0.02
+    });
+}
+
+// Scale factor
+const scaleFactor = Math.min(canvas.width, canvas.height)/800;
+
+// Sun
+const sun = { 
+    x: centerX, 
+    y: centerY, 
+    radius: 25, 
+    color: "yellow",
+    name: "Sun",
+    info: "The Sun is the star at the center of our Solar System"
+};
+
+// Planets with optimized structure
+const planets = [
+    { name:"Mercury", distanceX:80*scaleFactor, distanceY:70*scaleFactor, radius:4, speed:0.047, angle:0, color:"gray", trail:[], moons:[], 
+      info:"Smallest planet, closest to Sun" },
+    { name:"Venus", distanceX:120*scaleFactor, distanceY:110*scaleFactor, radius:6, speed:0.035, angle:0, color:"orange", trail:[], moons:[],
+      info:"Hottest planet, thick atmosphere" },
+    { name:"Earth", distanceX:160*scaleFactor, distanceY:150*scaleFactor, radius:8, speed:0.03, angle:0, color:"blue", trail:[], moons:[
+        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.1, angle:0, color:"white", trail:[] }
+    ], info:"Our home planet, has life" },
+    { name:"Mars", distanceX:200*scaleFactor, distanceY:180*scaleFactor, radius:7, speed:0.024, angle:0, color:"red", trail:[], moons:[
+        { distanceX:15*scaleFactor, distanceY:13*scaleFactor, radius:2, speed:0.08, angle:0, color:"gray", trail:[] },
+        { distanceX:22*scaleFactor, distanceY:20*scaleFactor, radius:1.5, speed:0.05, angle:0, color:"white", trail:[] }
+    ], info:"The Red Planet, has 2 moons" },
+    { name:"Jupiter", distanceX:260*scaleFactor, distanceY:230*scaleFactor, radius:12, speed:0.013, angle:0, color:"orange", trail:[], moons:[
+        { distanceX:25*scaleFactor, distanceY:22*scaleFactor, radius:3, speed:0.07, angle:0, color:"white", trail:[] },
+        { distanceX:35*scaleFactor, distanceY:30*scaleFactor, radius:2.5, speed:0.05, angle:0, color:"lightgray", trail:[] }
+    ], info:"Largest planet, gas giant" },
+    { name:"Saturn", distanceX:320*scaleFactor, distanceY:290*scaleFactor, radius:10, speed:0.01, angle:0, color:"gold", trail:[], moons:[
+        { distanceX:25*scaleFactor, distanceY:22*scaleFactor, radius:3, speed:0.06, angle:0, color:"white", trail:[] },
+        { distanceX:35*scaleFactor, distanceY:30*scaleFactor, radius:2.5, speed:0.04, angle:0, color:"lightgray", trail:[] }
+    ], hasRings: true, info:"Famous for its rings" },
+    { name:"Uranus", distanceX:380*scaleFactor, distanceY:350*scaleFactor, radius:9, speed:0.007, angle:0, color:"lightblue", trail:[], moons:[
+        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.05, angle:0, color:"white", trail:[] }
+    ], info:"Ice giant, rotates on its side" },
+    { name:"Neptune", distanceX:440*scaleFactor, distanceY:400*scaleFactor, radius:9, speed:0.005, angle:0, color:"blue", trail:[], moons:[
+        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.04, angle:0, color:"white", trail:[] }
+    ], info:"Farthest planet, dark and cold" }
+];
+
+// Asteroid belt - reduced for performance
+const asteroids = [];
+for(let i=0;i<200;i++){
+    const distX = Math.random()*50*scaleFactor + 210*scaleFactor;
+    const distY = distX * 0.9;
+    const angle = Math.random()*Math.PI*2;
+    const speed = 0.01 + Math.random()*0.01;
+    asteroids.push({ distanceX:distX, distanceY:distY, angle:angle, speed:speed, radius:1, color:"gray", trail:[] });
+}
+
+// Solar System time
+let simTimeSeconds = 0;
+const baseSimulationSpeed = 3600*24;
+
+function updateSimTime(){
+    if(isPaused) return;
+    simTimeSeconds += baseSimulationSpeed * speedMultiplier;
+    const seconds = Math.floor(simTimeSeconds%60);
+    const minutes = Math.floor((simTimeSeconds/60)%60);
+    const hours = Math.floor((simTimeSeconds/3600)%24);
+    const days = Math.floor((simTimeSeconds/(3600*24))%365)+1;
+    const months = Math.floor(days/30)+1;
+    const years = Math.floor(simTimeSeconds/(3600*24*365))+1;
+
+    document.getElementById("clock").innerText =
+        `Year ${years}, Month ${months}, Day ${days}, `+
+        `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} (${speedMultiplier}x)`;
+}
+
+// Draw stars - optimized
+function drawStars(){
+    for(let i=0; i<stars.length; i++){
+        const s = stars[i];
+        ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+        ctx.fillRect(s.x-s.radius, s.y-s.radius, s.radius*2, s.radius*2);
+        
+        s.alpha += s.alphaChange;
+        if(s.alpha>1){ s.alpha=1; s.alphaChange = -Math.abs(s.alphaChange); }
+        if(s.alpha<0){ s.alpha=0; s.alphaChange = Math.abs(s.alphaChange); }
+    }
+}
+
+// Optimized trail rendering
+function drawTrail(trail, color, width){
+    if(!showTrails || trail.length < 2) return;
+    
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+    for(let i=1; i<trail.length; i++){
+        ctx.lineTo(trail[i].x, trail[i].y);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+}
+
+// Draw function - optimized
+function draw(){
+    // Clear with black background
+    ctx.fillStyle="black";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    drawStars();
+
+    // Disable shadows for better performance
+    ctx.shadowBlur = 0;
+
+    // Sun
+    ctx.fillStyle=sun.color;
+    ctx.beginPath();
+    ctx.arc(centerX + offsetX, centerY + offsetY, sun.radius*zoom, 0, Math.PI*2);
+    ctx.fill();
+
+    // Planets
+    for(let i=0; i<planets.length; i++){
+        const p = planets[i];
+        const px = centerX + offsetX + p.distanceX*Math.cos(p.angle)*zoom;
+        const py = centerY + offsetY + p.distanceY*Math.sin(p.angle)*zoom;
+
+        // Trail
+        if(showTrails){
+            p.trail.push({x:px,y:py});
+            if(p.trail.length>200) p.trail.shift();
+            drawTrail(p.trail, p.color, 1.5);
+        }
+
+        // Saturn's rings
+        if(p.hasRings){
+            ctx.strokeStyle = "rgba(255,215,0,0.5)";
+            ctx.lineWidth = 3*zoom;
+            ctx.beginPath();
+            ctx.ellipse(px, py, p.radius*2*zoom, p.radius*1.2*zoom, 0, 0, Math.PI*2);
+            ctx.stroke();
+        }
+
+        // Planet
+        ctx.fillStyle=p.color;
+        ctx.beginPath();
+        ctx.arc(px,py,p.radius*zoom,0,Math.PI*2);
+        ctx.fill();
+
+        // Label
+        if(showLabels){
+            ctx.fillStyle="white";
+            ctx.font=`${12*zoom}px Arial`;
+            ctx.fillText(p.name, px + 10*zoom, py - 10*zoom);
+        }
+
+        // Moons
+        if(p.moons){
+            for(let j=0; j<p.moons.length; j++){
+                const m = p.moons[j];
+                const mx = px + m.distanceX*Math.cos(m.angle)*zoom;
+                const my = py + m.distanceY*Math.sin(m.angle)*zoom;
+
+                if(showTrails){
+                    m.trail.push({x:mx,y:my});
+                    if(m.trail.length>100) m.trail.shift();
+                    drawTrail(m.trail, m.color, 1);
+                }
+
+                ctx.fillStyle = m.color;
+                ctx.beginPath();
+                ctx.arc(mx,my,m.radius*zoom,0,Math.PI*2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // Asteroids - batch rendering
+    ctx.fillStyle="gray";
+    for(let i=0; i<asteroids.length; i++){
+        const a = asteroids[i];
+        const ax = centerX + offsetX + a.distanceX*Math.cos(a.angle)*zoom;
+        const ay = centerY + offsetY + a.distanceY*Math.sin(a.angle)*zoom;
+
+        if(showTrails){
+            a.trail.push({x:ax,y:ay});
+            if(a.trail.length>50) a.trail.shift();
+            drawTrail(a.trail, a.color, 0.8);
+        }
+
+        ctx.beginPath();
+        ctx.arc(ax,ay,a.radius*zoom,0,Math.PI*2);
+        ctx.fill();
+    }
+}
+
+// Update function - optimized
+function update(){
+    if(isPaused) return;
+    
+    const effectiveSpeed = speedMultiplier;
+    
+    for(let i=0; i<planets.length; i++){
+        const p = planets[i];
+        p.angle += p.speed * effectiveSpeed;
+        
+        if(p.moons){
+            for(let j=0; j<p.moons.length; j++){
+                p.moons[j].angle += p.moons[j].speed * effectiveSpeed;
+            }
+        }
+    }
+    
+    for(let i=0; i<asteroids.length; i++){
+        asteroids[i].angle += asteroids[i].speed * effectiveSpeed;
+    }
+}
+
+// FPS counter
+function updateFPS(){
+    frameCount++;
+    const now = Date.now();
+    if(now - lastFpsUpdate >= 1000){
+        fps = frameCount;
+        document.getElementById("fps").innerText = `FPS: ${fps}`;
+        frameCount = 0;
+        lastFpsUpdate = now;
+    }
+}
+
+// Animation loop
+function animate(){
+    update();
+    draw();
+    updateSimTime();
+    updateFPS();
+    requestAnimationFrame(animate);
+}
+
+animate();
+
+// Controls
+function adjustSpeed(multiplier){
+    speedMultiplier = multiplier;
+}
+
+function adjustZoom(delta){
+    zoom = Math.max(0.1, Math.min(5, zoom + delta));
+}
+
+function resetView(){
+    zoom = 1;
+    offsetX = 0;
+    offsetY = 0;
+}
+
+function toggleTrails(){
+    showTrails = !showTrails;
+    if(!showTrails){
+        planets.forEach(p=>{ p.trail=[]; if(p.moons) p.moons.forEach(m=>m.trail=[]); });
+        asteroids.forEach(a=>a.trail=[]);
+    }
+}
+
+function toggleLabels(){
+    showLabels = !showLabels;
+}
+
+function togglePause(){
+    isPaused = !isPaused;
+}
+
+// Mouse controls
+canvas.addEventListener('mousedown', (e)=>{
+    isDragging = true;
+    dragStartX = e.clientX - offsetX;
+    dragStartY = e.clientY - offsetY;
+});
+
+canvas.addEventListener('mousemove', (e)=>{
+    if(isDragging){
+        offsetX = e.clientX - dragStartX;
+        offsetY = e.clientY - dragStartY;
+    }
+});
+
+canvas.addEventListener('mouseup', ()=>{
+    isDragging = false;
+});
+
+canvas.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    adjustZoom(delta);
+});
+
+// Resize
+window.addEventListener("resize", ()=>{
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    centerX = canvas.width/2;
+    centerY = canvas.height/2;
+});
+</script>
 </body>
 </html>
