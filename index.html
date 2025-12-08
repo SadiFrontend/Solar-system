@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solar System Simulation - Optimized</title>
+<title>Solar System Simulation - True Real Positions</title>
 <style>
 body {
     margin: 0;
@@ -52,6 +52,11 @@ canvas {
     background: rgba(255,255,255,0.4);
 }
 
+#controls button.active {
+    background: rgba(100,200,100,0.5);
+    border-color: lightgreen;
+}
+
 #info {
     position: absolute;
     bottom: 10px;
@@ -96,12 +101,15 @@ canvas {
     <div style="margin-top:5px">
         <button onclick="togglePause()">⏯ Pause/Resume</button>
     </div>
+    <div style="margin-top:5px">
+        <button id="realTimeBtn" onclick="toggleRealTime()">🌍 Real Time Mode</button>
+    </div>
 </div>
 <div id="fps">FPS: 60</div>
 <div id="info">
     Click and drag to pan<br>
     Mouse wheel to zoom<br>
-    Click planet for info
+    Real Time uses NASA orbital elements
 </div>
 
 <script>
@@ -119,6 +127,7 @@ let showTrails = true;
 let showLabels = true;
 let isPaused = false;
 let speedMultiplier = 1;
+let isRealTimeMode = false;
 
 // Zoom and pan
 let zoom = 1;
@@ -145,8 +154,8 @@ for(let i=0;i<300;i++){
     });
 }
 
-// Scale factor
-const scaleFactor = Math.min(canvas.width, canvas.height)/800;
+// Scale factor - AU to pixels
+const AU = 80; // 1 AU = 80 pixels
 
 // Sun
 const sun = { 
@@ -158,62 +167,180 @@ const sun = {
     info: "The Sun is the star at the center of our Solar System"
 };
 
-// Planets with optimized structure
+// Orbital elements for planets (epoch J2000.0)
+// Format: [a (AU), e, I (deg), L (deg), longPeri (deg), longNode (deg)]
+// with century rates [da, de, dI, dL, dlongPeri, dlongNode]
+const orbitalElements = {
+    Mercury: {
+        elements: [0.38709927, 0.20563593, 7.00497902, 252.25032350, 77.45779628, 48.33076593],
+        rates: [0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081]
+    },
+    Venus: {
+        elements: [0.72333566, 0.00677672, 3.39467605, 181.97909950, 131.60246718, 76.67984255],
+        rates: [0.00000390, -0.00004107, -0.00078890, 58517.81538729, 0.00268329, -0.27769418]
+    },
+    Earth: {
+        elements: [1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0.0],
+        rates: [0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0.0]
+    },
+    Mars: {
+        elements: [1.52371034, 0.09339410, 1.84969142, -4.55343205, -23.94362959, 49.55953891],
+        rates: [0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343]
+    },
+    Jupiter: {
+        elements: [5.20288700, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909],
+        rates: [-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106]
+    },
+    Saturn: {
+        elements: [9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448],
+        rates: [-0.00125060, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794]
+    },
+    Uranus: {
+        elements: [19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.95427630, 74.01692503],
+        rates: [-0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589]
+    },
+    Neptune: {
+        elements: [30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227, 131.78422574],
+        rates: [0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.00508664]
+    }
+};
+
+// Planets data structure
 const planets = [
-    { name:"Mercury", distanceX:80*scaleFactor, distanceY:70*scaleFactor, radius:4, speed:0.047, angle:0, color:"gray", trail:[], moons:[], 
-      info:"Smallest planet, closest to Sun" },
-    { name:"Venus", distanceX:120*scaleFactor, distanceY:110*scaleFactor, radius:6, speed:0.035, angle:0, color:"orange", trail:[], moons:[],
-      info:"Hottest planet, thick atmosphere" },
-    { name:"Earth", distanceX:160*scaleFactor, distanceY:150*scaleFactor, radius:8, speed:0.03, angle:0, color:"blue", trail:[], moons:[
-        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.1, angle:0, color:"white", trail:[] }
-    ], info:"Our home planet, has life" },
-    { name:"Mars", distanceX:200*scaleFactor, distanceY:180*scaleFactor, radius:7, speed:0.024, angle:0, color:"red", trail:[], moons:[
-        { distanceX:15*scaleFactor, distanceY:13*scaleFactor, radius:2, speed:0.08, angle:0, color:"gray", trail:[] },
-        { distanceX:22*scaleFactor, distanceY:20*scaleFactor, radius:1.5, speed:0.05, angle:0, color:"white", trail:[] }
-    ], info:"The Red Planet, has 2 moons" },
-    { name:"Jupiter", distanceX:260*scaleFactor, distanceY:230*scaleFactor, radius:12, speed:0.013, angle:0, color:"orange", trail:[], moons:[
-        { distanceX:25*scaleFactor, distanceY:22*scaleFactor, radius:3, speed:0.07, angle:0, color:"white", trail:[] },
-        { distanceX:35*scaleFactor, distanceY:30*scaleFactor, radius:2.5, speed:0.05, angle:0, color:"lightgray", trail:[] }
-    ], info:"Largest planet, gas giant" },
-    { name:"Saturn", distanceX:320*scaleFactor, distanceY:290*scaleFactor, radius:10, speed:0.01, angle:0, color:"gold", trail:[], moons:[
-        { distanceX:25*scaleFactor, distanceY:22*scaleFactor, radius:3, speed:0.06, angle:0, color:"white", trail:[] },
-        { distanceX:35*scaleFactor, distanceY:30*scaleFactor, radius:2.5, speed:0.04, angle:0, color:"lightgray", trail:[] }
-    ], hasRings: true, info:"Famous for its rings" },
-    { name:"Uranus", distanceX:380*scaleFactor, distanceY:350*scaleFactor, radius:9, speed:0.007, angle:0, color:"lightblue", trail:[], moons:[
-        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.05, angle:0, color:"white", trail:[] }
-    ], info:"Ice giant, rotates on its side" },
-    { name:"Neptune", distanceX:440*scaleFactor, distanceY:400*scaleFactor, radius:9, speed:0.005, angle:0, color:"blue", trail:[], moons:[
-        { distanceX:20*scaleFactor, distanceY:18*scaleFactor, radius:2, speed:0.04, angle:0, color:"white", trail:[] }
-    ], info:"Farthest planet, dark and cold" }
+    { name:"Mercury", radius:4, color:"gray", trail:[], x:0, y:0, angle:0, info:"Smallest planet, closest to Sun" },
+    { name:"Venus", radius:6, color:"orange", trail:[], x:0, y:0, angle:0, info:"Hottest planet, thick atmosphere" },
+    { name:"Earth", radius:8, color:"blue", trail:[], x:0, y:0, angle:0, info:"Our home planet, has life" },
+    { name:"Mars", radius:7, color:"red", trail:[], x:0, y:0, angle:0, info:"The Red Planet, has 2 moons" },
+    { name:"Jupiter", radius:12, color:"orange", trail:[], x:0, y:0, angle:0, info:"Largest planet, gas giant" },
+    { name:"Saturn", radius:10, color:"gold", trail:[], x:0, y:0, angle:0, hasRings: true, info:"Famous for its rings" },
+    { name:"Uranus", radius:9, color:"lightblue", trail:[], x:0, y:0, angle:0, info:"Ice giant, rotates on its side" },
+    { name:"Neptune", radius:9, color:"blue", trail:[], x:0, y:0, angle:0, info:"Farthest planet, dark and cold" }
 ];
 
 // Asteroid belt - reduced for performance
 const asteroids = [];
 for(let i=0;i<200;i++){
-    const distX = Math.random()*50*scaleFactor + 210*scaleFactor;
-    const distY = distX * 0.9;
+    const distX = Math.random()*0.5*AU + 2.2*AU;
     const angle = Math.random()*Math.PI*2;
     const speed = 0.01 + Math.random()*0.01;
-    asteroids.push({ distanceX:distX, distanceY:distY, angle:angle, speed:speed, radius:1, color:"gray", trail:[] });
+    asteroids.push({ distance:distX/AU, angle:angle, speed:speed, radius:1, color:"gray", trail:[] });
 }
 
 // Solar System time
 let simTimeSeconds = 0;
 const baseSimulationSpeed = 3600*24;
 
+// J2000.0 epoch: January 1, 2000, 12:00 TT
+const J2000 = new Date('2000-01-01T12:00:00Z').getTime();
+
+// Calculate Julian centuries from J2000
+function getJulianCenturies(date) {
+    const JD = (date.getTime() / 86400000) + 2440587.5;
+    return (JD - 2451545.0) / 36525.0;
+}
+
+// Normalize angle to 0-360 degrees
+function normalizeAngle(angle) {
+    while (angle < 0) angle += 360;
+    while (angle > 360) angle -= 360;
+    return angle;
+}
+
+// Calculate planet position using orbital elements
+function calculatePlanetPosition(planetName, T) {
+    const elem = orbitalElements[planetName];
+    if (!elem) return { x: 0, y: 0 };
+    
+    // Get orbital elements for this epoch
+    let [a, e, I, L, longPeri, longNode] = elem.elements;
+    const [da, de, dI, dL, dlongPeri, dlongNode] = elem.rates;
+    
+    // Update for current epoch
+    a += da * T;
+    e += de * T;
+    I += dI * T;
+    L += dL * T;
+    longPeri += dlongPeri * T;
+    longNode += dlongNode * T;
+    
+    // Calculate argument of perihelion and mean anomaly
+    const omega = longPeri - longNode;
+    let M = L - longPeri;
+    M = normalizeAngle(M);
+    
+    // Convert to radians
+    const Mrad = M * Math.PI / 180;
+    const omegaRad = omega * Math.PI / 180;
+    const Irad = I * Math.PI / 180;
+    const longNodeRad = longNode * Math.PI / 180;
+    
+    // Solve Kepler's equation for eccentric anomaly (E)
+    let E = Mrad;
+    for (let i = 0; i < 10; i++) {
+        E = Mrad + e * Math.sin(E);
+    }
+    
+    // Calculate true anomaly
+    const nu = 2 * Math.atan2(
+        Math.sqrt(1 + e) * Math.sin(E / 2),
+        Math.sqrt(1 - e) * Math.cos(E / 2)
+    );
+    
+    // Calculate distance
+    const r = a * (1 - e * Math.cos(E));
+    
+    // Calculate heliocentric coordinates in orbital plane
+    const xOrbital = r * Math.cos(nu);
+    const yOrbital = r * Math.sin(nu);
+    
+    // Rotate to ecliptic plane
+    const cosOmega = Math.cos(omegaRad);
+    const sinOmega = Math.sin(omegaRad);
+    const cosI = Math.cos(Irad);
+    const sinI = Math.sin(Irad);
+    const cosNode = Math.cos(longNodeRad);
+    const sinNode = Math.sin(longNodeRad);
+    
+    const xEcliptic = (cosOmega * cosNode - sinOmega * sinNode * cosI) * xOrbital +
+                      (-sinOmega * cosNode - cosOmega * sinNode * cosI) * yOrbital;
+    const yEcliptic = (cosOmega * sinNode + sinOmega * cosNode * cosI) * xOrbital +
+                      (-sinOmega * sinNode + cosOmega * cosNode * cosI) * yOrbital;
+    
+    return { x: xEcliptic * AU, y: yEcliptic * AU, r: r };
+}
+
 function updateSimTime(){
     if(isPaused) return;
-    simTimeSeconds += baseSimulationSpeed * speedMultiplier;
-    const seconds = Math.floor(simTimeSeconds%60);
-    const minutes = Math.floor((simTimeSeconds/60)%60);
-    const hours = Math.floor((simTimeSeconds/3600)%24);
-    const days = Math.floor((simTimeSeconds/(3600*24))%365)+1;
-    const months = Math.floor(days/30)+1;
-    const years = Math.floor(simTimeSeconds/(3600*24*365))+1;
+    
+    if(isRealTimeMode){
+        // Use actual current date/time
+        const now = new Date();
+        const diffMs = now.getTime() - J2000;
+        simTimeSeconds = diffMs / 1000;
+        
+        const seconds = now.getSeconds();
+        const minutes = now.getMinutes();
+        const hours = now.getHours();
+        const days = now.getDate();
+        const months = now.getMonth() + 1;
+        const years = now.getFullYear();
+        
+        document.getElementById("clock").innerText =
+            `🌍 REAL TIME: ${years}-${months.toString().padStart(2,'0')}-${days.toString().padStart(2,'0')} `+
+            `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+    } else {
+        simTimeSeconds += baseSimulationSpeed * speedMultiplier;
+        const seconds = Math.floor(simTimeSeconds%60);
+        const minutes = Math.floor((simTimeSeconds/60)%60);
+        const hours = Math.floor((simTimeSeconds/3600)%24);
+        const days = Math.floor((simTimeSeconds/(3600*24))%365)+1;
+        const months = Math.floor(days/30)+1;
+        const years = Math.floor(simTimeSeconds/(3600*24*365))+2000;
 
-    document.getElementById("clock").innerText =
-        `Year ${years}, Month ${months}, Day ${days}, `+
-        `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} (${speedMultiplier}x)`;
+        document.getElementById("clock").innerText =
+            `Year ${years}, Month ${months}, Day ${days}, `+
+            `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')} (${speedMultiplier}x)`;
+    }
 }
 
 // Draw stars - optimized
@@ -263,13 +390,13 @@ function draw(){
     // Planets
     for(let i=0; i<planets.length; i++){
         const p = planets[i];
-        const px = centerX + offsetX + p.distanceX*Math.cos(p.angle)*zoom;
-        const py = centerY + offsetY + p.distanceY*Math.sin(p.angle)*zoom;
+        const px = centerX + offsetX + p.x*zoom;
+        const py = centerY + offsetY + p.y*zoom;
 
         // Trail
         if(showTrails){
             p.trail.push({x:px,y:py});
-            if(p.trail.length>200) p.trail.shift();
+            if(p.trail.length>300) p.trail.shift();
             drawTrail(p.trail, p.color, 1.5);
         }
 
@@ -294,34 +421,14 @@ function draw(){
             ctx.font=`${12*zoom}px Arial`;
             ctx.fillText(p.name, px + 10*zoom, py - 10*zoom);
         }
-
-        // Moons
-        if(p.moons){
-            for(let j=0; j<p.moons.length; j++){
-                const m = p.moons[j];
-                const mx = px + m.distanceX*Math.cos(m.angle)*zoom;
-                const my = py + m.distanceY*Math.sin(m.angle)*zoom;
-
-                if(showTrails){
-                    m.trail.push({x:mx,y:my});
-                    if(m.trail.length>100) m.trail.shift();
-                    drawTrail(m.trail, m.color, 1);
-                }
-
-                ctx.fillStyle = m.color;
-                ctx.beginPath();
-                ctx.arc(mx,my,m.radius*zoom,0,Math.PI*2);
-                ctx.fill();
-            }
-        }
     }
 
     // Asteroids - batch rendering
     ctx.fillStyle="gray";
     for(let i=0; i<asteroids.length; i++){
         const a = asteroids[i];
-        const ax = centerX + offsetX + a.distanceX*Math.cos(a.angle)*zoom;
-        const ay = centerY + offsetY + a.distanceY*Math.sin(a.angle)*zoom;
+        const ax = centerX + offsetX + a.distance*AU*Math.cos(a.angle)*zoom;
+        const ay = centerY + offsetY + a.distance*AU*Math.sin(a.angle)*zoom;
 
         if(showTrails){
             a.trail.push({x:ax,y:ay});
@@ -339,19 +446,32 @@ function draw(){
 function update(){
     if(isPaused) return;
     
-    const effectiveSpeed = speedMultiplier;
-    
-    for(let i=0; i<planets.length; i++){
-        const p = planets[i];
-        p.angle += p.speed * effectiveSpeed;
+    if(isRealTimeMode){
+        // Calculate current Julian centuries from J2000
+        const now = new Date();
+        const T = getJulianCenturies(now);
         
-        if(p.moons){
-            for(let j=0; j<p.moons.length; j++){
-                p.moons[j].angle += p.moons[j].speed * effectiveSpeed;
-            }
+        // Update all planet positions using real orbital mechanics
+        for(let i=0; i<planets.length; i++){
+            const pos = calculatePlanetPosition(planets[i].name, T);
+            planets[i].x = pos.x;
+            planets[i].y = pos.y;
+        }
+    } else {
+        // Simulation mode - use approximate date
+        const simDate = new Date(J2000 + simTimeSeconds * 1000);
+        const T = getJulianCenturies(simDate);
+        
+        // Update all planet positions
+        for(let i=0; i<planets.length; i++){
+            const pos = calculatePlanetPosition(planets[i].name, T);
+            planets[i].x = pos.x;
+            planets[i].y = pos.y;
         }
     }
     
+    // Update asteroids (simple circular orbits)
+    const effectiveSpeed = isRealTimeMode ? 0.00001 : speedMultiplier * 0.01;
     for(let i=0; i<asteroids.length; i++){
         asteroids[i].angle += asteroids[i].speed * effectiveSpeed;
     }
@@ -398,7 +518,7 @@ function resetView(){
 function toggleTrails(){
     showTrails = !showTrails;
     if(!showTrails){
-        planets.forEach(p=>{ p.trail=[]; if(p.moons) p.moons.forEach(m=>m.trail=[]); });
+        planets.forEach(p=>{ p.trail=[]; });
         asteroids.forEach(a=>a.trail=[]);
     }
 }
@@ -409,6 +529,19 @@ function toggleLabels(){
 
 function togglePause(){
     isPaused = !isPaused;
+}
+
+function toggleRealTime(){
+    isRealTimeMode = !isRealTimeMode;
+    const btn = document.getElementById('realTimeBtn');
+    if(isRealTimeMode){
+        btn.classList.add('active');
+        // Sync to current real time immediately
+        const now = new Date();
+        simTimeSeconds = (now.getTime() - J2000) / 1000;
+    } else {
+        btn.classList.remove('active');
+    }
 }
 
 // Mouse controls
